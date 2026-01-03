@@ -128,38 +128,32 @@ const generateSchedule = (loanData) => {
         // - Collect Interest every month
         // - Collect Principal at the end (Bullet) OR split principal?
         // Usually, private finance = Interest Only for N months, then Principal.
-        
-        currentDate.setMonth(currentDate.getMonth() + duration);
-        
          const monthlyInterest = (principal * rate) / 100;
-
-
 
         for (let i = 1; i <= duration; i++) {
             currentDate.setMonth(currentDate.getMonth() + 1);
-            let amountDue = 0;
-            let type = 'Interest';
             // If Interest is collected at END, we add monthly interest
             if (financials.deductionConfig.interest === 'End') {
-                amountDue += monthlyInterest;
+                if (monthlyInterest > 0) {
+                    dues.push({
+                        date: new Date(currentDate),
+                        type: 'Interest',
+                        amount: monthlyInterest,
+                        status: 'Unpaid',
+                        installmentNumber: i
+                    });
+                }
             }
             // If this is the LAST month, add Principal
             if (i === duration) {
-                amountDue += principal;
-                type = 'Principal'; // or Mixed
-            }
-
-            // Only push if there is an amount (e.g., if Upfront interest, early months might be 0 unless we split principal)
-            // Assuming for Monthly: It's Interest Only until end.
-            if (amountDue > 0) {
                 dues.push({
                     date: new Date(currentDate),
-                    type: type,
-                    amount: amountDue,
+                    type: 'Principal',
+                    amount: principal,
                     status: 'Unpaid',
-                    installmentNumber: i
+                    installmentNumber: i // Same installment number as the interest of this month
                 });
-            }
+            }           
         }
     }
     return dues;

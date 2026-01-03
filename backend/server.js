@@ -11,7 +11,10 @@ const app = express();
 
 // Middleware
 app.use(express.json());
-app.use(cors());
+app.use(cors({
+    origin: '*', // Allows mobile devices and web browsers to connect
+    methods: ['GET', 'POST', 'PUT', 'DELETE']
+}));
 
 // Database Connection
 const connectDB = async () => {
@@ -44,6 +47,23 @@ app.use('/api/settings', systemSettingsRoutes);
 app.get('/', (req, res) => {
     res.send('Finance & Lending API is running...');
 });
+
+// Add this near your other routes
+const User = require('./models/User'); // Ensure this path is correct
+
+app.get('/api/admin-check', async (req, res) => {
+    try {
+        const admin = await User.findOne({ role: 'admin' });
+        if (admin) {
+            res.json({ name: admin.name, role: admin.role });
+        } else {
+            res.status(404).json({ message: "No admin found" });
+        }
+    } catch (error) {
+        res.status(500).json({ message: "Server Error" });
+    }
+});
+
 
 // Start Server
 const PORT = process.env.PORT || 5000;

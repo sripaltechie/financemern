@@ -1,5 +1,6 @@
 const Loan = require('../models/Loan');
 const Customer = require('../models/Customer');
+const User = require('../models/User');
 const { generateSchedule } = require('../utils/scheduleGenerator'); 
 
 // @desc    Create a New Loan (Disbursement)
@@ -43,18 +44,12 @@ const createLoan = async (req, res) => {
         // A. Interest Upfront?
         if (financials.deductionConfig.interest === 'Upfront') {
             // Estimate months for interest calc
-             let timeInMonths = Number(financials.interestDurationMonths);
-
-            
+             let timeInMonths = Number(financials.interestDurationMonths);            
 
             if (!timeInMonths) {
-
                 if(loanType === 'Daily') timeInMonths = duration / 30;
-
-                if(loanType === 'Weekly') timeInMonths = duration / 4; 
-
-                if(loanType === 'Monthly') timeInMonths = duration;
-
+                else if(loanType === 'Weekly') timeInMonths = duration / 4;
+                else if(loanType === 'Monthly') timeInMonths = duration;
             }           
             const interestAmount = (principal * rate * timeInMonths) / 100;
             upfrontDeductions += interestAmount;
@@ -116,8 +111,18 @@ const createLoan = async (req, res) => {
             notes
         });
 
+         // --- 6. UPDATE LENDER BALANCES (NEW) ---
+        // Deduct the invested amount from the lender's current balance
+        if (finalLenders.length > 0) {
+            for (const lender of finalLenders) {
+                if (lender.userId && lender.investedAmount > 0) {
+                    await User.findByIdAndUpdate(lender.userId, {
+                        $inc: { 'lenderConfig.currentBalanceWithAdmin': -lender.investedAmount }
+                    });
+                }
+            }
+        }
         res.status(201).json(newLoan);
-
     } catch (error) {
         console.error("Create Loan Error:", error);
         res.status(500).json({ message: error.message });
