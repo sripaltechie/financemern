@@ -9,6 +9,7 @@ const createLoan = async (req, res) => {
         const {
             customerId,
             loanType,
+            disbursementMode,
             financials,
             penaltyConfig,
             lenderId, 
@@ -42,11 +43,19 @@ const createLoan = async (req, res) => {
         // A. Interest Upfront?
         if (financials.deductionConfig.interest === 'Upfront') {
             // Estimate months for interest calc
-            let timeInMonths = 1;
-            if(loanType === 'Daily') timeInMonths = duration / 30;
-            if(loanType === 'Weekly') timeInMonths = duration / 4; 
-            if(loanType === 'Monthly') timeInMonths = duration;
+             let timeInMonths = Number(financials.interestDurationMonths);
 
+            
+
+            if (!timeInMonths) {
+
+                if(loanType === 'Daily') timeInMonths = duration / 30;
+
+                if(loanType === 'Weekly') timeInMonths = duration / 4; 
+
+                if(loanType === 'Monthly') timeInMonths = duration;
+
+            }           
             const interestAmount = (principal * rate * timeInMonths) / 100;
             upfrontDeductions += interestAmount;
         }
@@ -87,6 +96,7 @@ const createLoan = async (req, res) => {
         const newLoan = await Loan.create({
             customerId,
             loanType,
+            disbursementMode: disbursementMode || 'Cash', 
             financials: {
                 ...financials,
                 commissionStructure: { // Map frontend fields to schema structure if needed

@@ -3,9 +3,10 @@ import axios from 'axios';
 import { BrowserRouter as Router, Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom';
 import { 
   User, Lock, Phone, ArrowRight, LayoutDashboard, LogOut, ShieldAlert, 
-  Wallet, Users, Banknote, Menu, X, Plus, Search, MapPin, Check, Trash2, Home, Briefcase, FileText, Calculator, Percent, FilePenLine, UserCheck
+  Wallet, Users, Banknote, Menu, X, Plus, Search, MapPin, Check, Trash2, Home, Briefcase, FileText, Calculator, Percent, FilePenLine, UserCheck,Settings
 } from 'lucide-react';
 import LenderCashEntry from './LenderCashEntry';
+import PaymentModes from './PaymentModes';
 
 // --- CONFIGURATION ---
 const API_URL = 'http://localhost:5000/api';
@@ -54,6 +55,7 @@ const Sidebar = ({ user, onLogout }) => {
     { icon: Wallet, label: 'Loans (Chits)', path: '/loans' }, 
     { icon: Banknote, label: 'Collections', path: '/collections' },
     { icon: Briefcase, label: 'Lender Cash', path: '/lender-cash' },
+    { icon: Settings, label: 'Settings', path: '/settings' },
   ];
 
   return (
@@ -112,6 +114,9 @@ const LoanForm = ({ customer, collectionBoys, onClose, onSuccess, onUpdateCustom
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   
+  // Payment Modes State
+  const [paymentModes, setPaymentModes] = useState([]);
+  
   // Missing Collection Boy Logic
   const [missingLinkMode, setMissingLinkMode] = useState(false);
   const [selectedBoyId, setSelectedBoyId] = useState('');
@@ -125,10 +130,12 @@ const LoanForm = ({ customer, collectionBoys, onClose, onSuccess, onUpdateCustom
   const [formData, setFormData] = useState({
     customerId: customer._id,
     loanType: 'Daily',
+    disbursementMode: 'Cash', // Default
     financials: {
       principalAmount: '',
       interestRate: '', 
       duration: 100, // Default 100 Days for Daily
+      interestDurationMonths: 3, // NEW: Default 3 months interest for 100 days
       fixedInstallmentAmount: '', // For Weekly
       deductionConfig: {
         interest: 'End',
@@ -146,10 +153,21 @@ const LoanForm = ({ customer, collectionBoys, onClose, onSuccess, onUpdateCustom
   const [deductions, setDeductions] = useState({ interest: 0, adminComm: 0, staffComm: 0 });
 
   useEffect(() => {
+    // Fetch Lenders
     const fetchLenders = async () => {
         try { const { data } = await api.get('/users?role=lender'); setLendersList(data); } catch (err) {}
     };
+    // Fetch Payment Modes
+    const fetchModes = async () => {
+        try { 
+            const { data } = await api.get('/settings'); 
+            if(data && data.activePaymentModes) setPaymentModes(data.activePaymentModes);
+        } catch (err) {}
+    };
+
     fetchLenders();
+    fetchModes();
+    
     if (!customer.collectionBoyId) setMissingLinkMode(true);
   }, [customer]);
 
@@ -169,6 +187,7 @@ const LoanForm = ({ customer, collectionBoys, onClose, onSuccess, onUpdateCustom
     const principal = Number(formData.financials.principalAmount) || 0;
     const rate = Number(formData.financials.interestRate) || 0;
     const duration = Number(formData.financials.duration) || 0;
+    const intMonths = Number(formData.financials.interestDurationMonths) || 0;
     
     const adminCommVal = Number(formData.financials.adminCommission.amount) || 0;
     const staffCommVal = Number(formData.financials.staffCommission.amount) || 0;
@@ -178,12 +197,9 @@ const LoanForm = ({ customer, collectionBoys, onClose, onSuccess, onUpdateCustom
     let staffCommDed = 0;
 
     if (formData.financials.deductionConfig.interest === 'Upfront') {
-      let timeInMonths = 1;
-      if(formData.loanType === 'Daily') timeInMonths = duration / 30;
-      if(formData.loanType === 'Weekly') timeInMonths = duration / 4; 
-      if(formData.loanType === 'Monthly') timeInMonths = duration;
+      // Use the manual months input for calculation
 
-      interestDed = (principal * rate * timeInMonths) / 100;
+      interestDed = (principal * rate * intMonths) / 100;
     }
 
     if (formData.financials.deductionConfig.adminCommission === 'Upfront') adminCommDed = adminCommVal;
@@ -193,8 +209,9 @@ const LoanForm = ({ customer, collectionBoys, onClose, onSuccess, onUpdateCustom
     setNetDisbursement(principal - interestDed - adminCommDed - staffCommDed);
   }, [
     formData.financials.principalAmount, formData.financials.interestRate, formData.financials.duration,
+    formData.financials.interestDurationMonths, 
     formData.financials.adminCommission.amount, formData.financials.staffCommission.amount,
-    formData.financials.deductionConfig, formData.loanType
+    formData.financials.deductionConfig
   ]);
 
   const fundedAmount = lenderSplits.reduce((sum, item) => sum + Number(item.amount), 0);
@@ -218,13 +235,14 @@ const LoanForm = ({ customer, collectionBoys, onClose, onSuccess, onUpdateCustom
   const handleTypeChange = (e) => {
     const type = e.target.value;
     let defDuration = 100;
-    if (type === 'Weekly') defDuration = 14; 
-    if (type === 'Monthly') defDuration = 1;
+    let defIntMonths = 3; 
+    if (type === 'Weekly') { defDuration = 14; defIntMonths = 3; }
+    if (type === 'Monthly') { defDuration = 1; defIntMonths = 1; }
 
     setFormData(prev => ({
         ...prev, 
         loanType: type,
-        financials: { ...prev.financials, duration: defDuration }
+        financials: { ...prev.financials, duration: defDuration, interestDurationMonths: defIntMonths }
     }));
   };
 
@@ -292,7 +310,7 @@ const LoanForm = ({ customer, collectionBoys, onClose, onSuccess, onUpdateCustom
             <div>
                {/* DYNAMIC LABEL FOR DURATION */}
                <label className="block text-sm font-medium mb-1">
-                   {formData.loanType === 'Daily' ? 'Days' : formData.loanType === 'Weekly' ? 'Weeks (Approx)' : 'Months'}
+                   {formData.loanType === 'Daily' ? 'Days' : formData.loanType === 'Weekly' ? 'Weeks' : 'Months'}
                </label>
                <input type="number" className="w-full p-2 border rounded" value={formData.financials.duration} onChange={e => updateFinancials('duration', e.target.value)} />
             </div>
@@ -300,6 +318,30 @@ const LoanForm = ({ customer, collectionBoys, onClose, onSuccess, onUpdateCustom
                <label className="block text-sm font-medium mb-1">Interest Rate (%/mo)</label>
                <input type="number" className="w-full p-2 border rounded" value={formData.financials.interestRate} onChange={e => updateFinancials('interestRate', e.target.value)} required />
             </div>
+          </div>
+            {/* NEW: Interest Duration Input (Separate Row or inline) */}
+
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div>
+                  <label className="block text-sm font-medium mb-1 text-blue-800">Interest Calc (Months)</label>
+                  <input type="number" className="w-full p-2 border rounded border-blue-200 bg-blue-50" value={formData.financials.interestDurationMonths} onChange={e => updateFinancials('interestDurationMonths', e.target.value)} />
+              </div>
+
+              {/* NEW: Disbursement Mode */}
+              <div>
+                  <label className="block text-sm font-medium mb-1 text-gray-700">Disbursement Mode</label>
+                  <select 
+                      className="w-full p-2 border rounded bg-white" 
+                      value={formData.disbursementMode} 
+                      onChange={e => setFormData({ ...formData, disbursementMode: e.target.value })}
+                  >
+                      {paymentModes.length > 0 ? (
+                          paymentModes.map(m => <option key={m.name} value={m.name}>{m.name}</option>)
+                      ) : (
+                          <option value="Cash">Cash</option>
+                      )}
+                  </select>
+              </div>
           </div>
 
           {/* Conditional Weekly Input */}
@@ -1322,6 +1364,7 @@ function App() {
                
                <Route path="*" element={<div className="p-8">Module under construction</div>} />
                <Route path="/lender-cash" element={<LenderCashEntry showToast={showToast} />} />
+               <Route path="/settings" element={<PaymentModes showToast={showToast} />} />
              </Routes>
           </div>
         </div>

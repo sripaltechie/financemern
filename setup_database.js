@@ -85,12 +85,9 @@ const loanSchema = new mongoose.Schema({
         principalAmount: Number,
         interestRate: Number,
         
-        // --- Added based on request ---
-        // Stores "100" for Daily, or specific weeks/months
-        duration: { type: Number, default: 100 }, 
-        // Stores the manually defined installment (e.g., 2000 for Weekly)
-        fixedInstallmentAmount: Number, 
-        // ------------------------------
+        duration: { type: Number, default: 100 },
+        interestDurationMonths: { type: Number, default: 3 }, // New Field
+        fixedInstallmentAmount: Number,
 
         deductionConfig: {
             interest: { type: String, enum: ['Upfront', 'End'] },

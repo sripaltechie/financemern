@@ -17,11 +17,12 @@ const loanSchema = new mongoose.Schema({
         default: 'Active' 
     },
     riskFlags: [String], // e.g., "Family Conflict Ignored"
-    
+    disbursementMode: { type: String, default: 'Cash' }, 
     financials: {
         principalAmount: { type: Number, required: true },
         interestRate: { type: Number, required: true },
         duration: { type: Number, default: 100 }, // Default 100 for Daily
+        interestDurationMonths: { type: Number, default: 3 }, // Basis for interest calc
         fixedInstallmentAmount: Number,           // For Weekly logic (e.g., 2000)
         deductionConfig: {
             interest: { type: String, enum: ['Upfront', 'End'], default: 'End' },

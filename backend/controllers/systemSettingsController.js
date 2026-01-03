@@ -1,21 +1,39 @@
-const SystemSettings = require('../models/systemSettings');
+const SystemSettings = require('../models/SystemSettings');
 
-// @desc    Get Global Config (Payment Modes, Rules)
+// @desc    Get All Settings
 // @route   GET /api/settings
 const getSettings = async (req, res) => {
     try {
-        // Fetch the config document (assuming single singleton document)
         let settings = await SystemSettings.findOne({ key: 'global_config' });
-        
-        // Fallback if not found (Should have been seeded, but safety first)
         if (!settings) {
-            return res.status(404).json({ message: 'System settings not initialized' });
+            // Auto-create if missing (Safe Fallback)
+            settings = await SystemSettings.create({
+                key: 'global_config',
+                activePaymentModes: [{ name: 'Cash', type: 'Cash' }]
+            });
         }
-
         res.json(settings);
     } catch (error) {
         res.status(500).json({ message: error.message });
     }
 };
 
-module.exports = { getSettings };
+// @desc    Update Payment Modes List
+// @route   PUT /api/settings/payment-modes
+const updatePaymentModes = async (req, res) => {
+    try {
+        const { modes } = req.body; // Expects array: [{name: 'GPay', type: 'Online'}, ...]
+        
+        const settings = await SystemSettings.findOneAndUpdate(
+            { key: 'global_config' },
+            { $set: { activePaymentModes: modes } },
+            { new: true, upsert: true }
+        );
+
+        res.json(settings.activePaymentModes);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
+module.exports = { getSettings, updatePaymentModes };

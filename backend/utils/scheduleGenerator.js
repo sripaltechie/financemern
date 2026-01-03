@@ -14,26 +14,41 @@ const generateSchedule = (loanData) => {
     let currentDate = new Date(startDate);
     
     // Calculate Total Payable Amount
-    let totalPayable = principal;
-    if (financials.deductionConfig.interest === 'End') {
-        // Simple Interest Calculation
-        // Note: For Daily/Weekly, usually 'rate' is per month. 
-        // We need to standardize how rate applies to these durations.
-        // Assuming standard: (Principal * Rate * (Months)) / 100
-        // Approx months = duration / 30 for daily, duration / 4 for weekly.
+    // let totalPayable = principal;
+    // if (financials.deductionConfig.interest === 'End') {
+    //     // Simple Interest Calculation
+    //     // Note: For Daily/Weekly, usually 'rate' is per month. 
+    //     // We need to standardize how rate applies to these durations.
+    //     // Assuming standard: (Principal * Rate * (Months)) / 100
+    //     // Approx months = duration / 30 for daily, duration / 4 for weekly.
         
-        let timeInMonths = 1;
-        if(loanType === 'Daily') timeInMonths = duration / 30;
-        if(loanType === 'Weekly') timeInMonths = duration / 4; 
-        if(loanType === 'Monthly') timeInMonths = duration;
+    //     let timeInMonths = 1;
+    //     if(loanType === 'Daily') timeInMonths = duration / 30;
+    //     if(loanType === 'Weekly') timeInMonths = duration / 4; 
+    //     if(loanType === 'Monthly') timeInMonths = duration;
 
-        const totalInterest = (principal * rate * timeInMonths) / 100;
-        totalPayable += totalInterest;
-    }
+    //     const totalInterest = (principal * rate * timeInMonths) / 100;
+    //     totalPayable += totalInterest;
+    // }
 
     // --- 1. DAILY LOANS (Default 100 Days) ---
     if (loanType === 'Daily') {
         // Logic: Split Total Payable equally over 'duration' (100) days
+          let totalPayable = principal;
+
+        // If Interest is End, add it to total payable
+
+        if (financials.deductionConfig.interest === 'End') {
+
+            // Daily interest usually calculated for the full "duration" days as months (duration/30)
+
+            const timeInMonths = duration / 30;
+
+            const totalInterest = (principal * rate * timeInMonths) / 100;
+
+            totalPayable += totalInterest;
+
+        }
         const dailyInstallment = Math.ceil(totalPayable / duration);
 
         for (let i = 1; i <= duration; i++) {
@@ -52,7 +67,13 @@ const generateSchedule = (loanData) => {
     // --- 2. WEEKLY LOANS (Fixed Amount Logic) ---
     else if (loanType === 'Weekly') {
         // Logic: 30000 total, 2000 fixed -> 13 * 2000 + 1 * 4000
-        
+         let totalPayable = principal;
+
+        if (financials.deductionConfig.interest === 'End') {
+            const timeInMonths = duration / 4; 
+            const totalInterest = (principal * rate * timeInMonths) / 100;
+            totalPayable += totalInterest;
+        }
         let remainingBalance = totalPayable;
         let installmentNum = 1;
 
@@ -103,19 +124,44 @@ const generateSchedule = (loanData) => {
 
     // --- 3. MONTHLY LOANS (Single Entry) ---
     else if (loanType === 'Monthly') {
-        // Logic: Only 1 due entry at the end of duration (Bullet Repayment)
+         // Standard Monthly Logic:
+        // - Collect Interest every month
+        // - Collect Principal at the end (Bullet) OR split principal?
+        // Usually, private finance = Interest Only for N months, then Principal.
         
         currentDate.setMonth(currentDate.getMonth() + duration);
         
-        dues.push({
-            date: new Date(currentDate),
-            type: 'Principal', // Contains both Principal + Interest if Interest is 'End'
-            amount: totalPayable,
-            status: 'Unpaid',
-            installmentNumber: 1
-        });
-    }
+         const monthlyInterest = (principal * rate) / 100;
 
+
+
+        for (let i = 1; i <= duration; i++) {
+            currentDate.setMonth(currentDate.getMonth() + 1);
+            let amountDue = 0;
+            let type = 'Interest';
+            // If Interest is collected at END, we add monthly interest
+            if (financials.deductionConfig.interest === 'End') {
+                amountDue += monthlyInterest;
+            }
+            // If this is the LAST month, add Principal
+            if (i === duration) {
+                amountDue += principal;
+                type = 'Principal'; // or Mixed
+            }
+
+            // Only push if there is an amount (e.g., if Upfront interest, early months might be 0 unless we split principal)
+            // Assuming for Monthly: It's Interest Only until end.
+            if (amountDue > 0) {
+                dues.push({
+                    date: new Date(currentDate),
+                    type: type,
+                    amount: amountDue,
+                    status: 'Unpaid',
+                    installmentNumber: i
+                });
+            }
+        }
+    }
     return dues;
 };
 
