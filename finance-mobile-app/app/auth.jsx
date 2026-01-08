@@ -12,6 +12,8 @@ import {
   Alert 
 } from 'react-native';
 import axios from 'axios';
+import { Config } from '../constants/Config';
+
 
 // Safely handle expo-router for preview environment
 let useRouter;
@@ -28,7 +30,7 @@ try {
 
 // IMPORTANT: Replace with your computer's local IP address (e.g., 192.168.1.5)
 // Do NOT use 'localhost' as physical devices cannot see 'localhost' of your computer.
-const API_URL = 'http://10.193.116.230:5000/api'; 
+// const API_URL = 'http://10.193.116.230:5000/api'; 
 
 export default function AuthScreen() {
   const router = useRouter();
@@ -58,7 +60,7 @@ export default function AuthScreen() {
         : formData;
 
       // 2. Call your MERN Backend
-      const response = await axios.post(`${API_URL}${endpoint}`, payload);
+      const response = await axios.post(`${Config.API_URL}${endpoint}`, payload);
       const { data } = response;
 
       // 3. Success Feedback

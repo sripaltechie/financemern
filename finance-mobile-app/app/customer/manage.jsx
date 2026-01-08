@@ -10,9 +10,10 @@ import {
   Users, FileText, Check, Plus, Trash2, Search, Briefcase 
 } from 'lucide-react-native';
 import * as Location from 'expo-location';
+import { Config } from '../../constants/Config';
 
 // IMPORTANT: Replace with your actual computer IP
-const API_URL = 'http://192.168.1.10:5000/api'; 
+// const API_URL = 'http://192.168.1.10:5000/api'; 
 
 export default function ManageCustomer() {
   const router = useRouter();
@@ -58,8 +59,8 @@ export default function ManageCustomer() {
   const fetchInitialData = async () => {
     try {
       const [boysRes, custRes] = await Promise.all([
-        axios.get(`${API_URL}/users?role=collection_boy`),
-        axios.get(`${API_URL}/customers`)
+        axios.get(`${Config.API_URL}/users?role=collection_boy`),
+        axios.get(`${Config.API_URL}/customers`)
       ]);
       setCollectionBoys(boysRes.data);
       setAllCustomers(custRes.data);
@@ -71,7 +72,7 @@ export default function ManageCustomer() {
   const fetchCustomerDetails = async () => {
     setFetching(true);
     try {
-      const { data } = await axios.get(`${API_URL}/customers/${id}`);
+      const { data } = await axios.get(`${Config.API_URL}/customers/${id}`);
       setFormData({
         ...data,
         incomeAmount: data.incomeAmount?.toString() || '',
@@ -144,10 +145,10 @@ export default function ManageCustomer() {
       };
 
       if (id) {
-        await axios.put(`${API_URL}/customers/${id}`, payload);
+        await axios.put(`${Config.API_URL}/customers/${id}`, payload);
         Alert.alert("Success", "Customer updated successfully.");
       } else {
-        await axios.post(`${API_URL}/customers`, payload);
+        await axios.post(`${Config.API_URL}/customers`, payload);
         Alert.alert("Success", "Customer created successfully.");
       }
       router.back();

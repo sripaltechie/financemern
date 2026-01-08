@@ -6,9 +6,10 @@ import {
 import { useRouter, useFocusEffect } from 'expo-router';
 import axios from 'axios';
 import { Search, Plus, User, Phone, MapPin, Trash2, Edit3, ChevronRight } from 'lucide-react-native';
+import { Config } from '../../constants/Config';
 
 // Update with your local IP
-const API_URL = 'http://192.168.1.10:5000/api'; 
+// const API_URL = 'http://192.168.1.10:5000/api'; 
 
 export default function CustomersScreen() {
   const router = useRouter();
@@ -20,7 +21,7 @@ export default function CustomersScreen() {
 
   const fetchCustomers = async () => {
     try {
-      const { data } = await axios.get(`${API_URL}/customers`);
+      const { data } = await axios.get(`${Config.API_URL}/customers`);
       setCustomers(data);
       setFilteredCustomers(data);
     } catch (err) {
@@ -60,7 +61,7 @@ export default function CustomersScreen() {
             try {
               // Assuming your backend has a DELETE route or using PUT to deactivate
               // For now, we'll simulate the UI update
-              await axios.delete(`${API_URL}/customers/${id}`);
+              await axios.delete(`${Config.API_URL}/customers/${id}`);
               setCustomers(prev => prev.filter(c => c._id !== id));
               Alert.alert("Success", "Customer removed.");
             } catch (err) {
