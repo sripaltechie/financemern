@@ -17,7 +17,10 @@ const loanSchema = new mongoose.Schema({
         default: 'Active' 
     },
     riskFlags: [String], // e.g., "Family Conflict Ignored"
-    disbursementMode: { type: String, default: 'Cash' }, 
+    disbursementSplit: [{
+        mode: { type: String, required: true }, // e.g., 'Cash', 'PhonePe'
+        amount: { type: Number, required: true }
+    }],    
     financials: {
         principalAmount: { type: Number, required: true },
         interestRate: { type: Number, required: true },

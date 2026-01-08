@@ -10,7 +10,7 @@ const createTransaction = async (req, res) => {
             customerId, 
             amount, 
             collectedBy, 
-            paymentMode, 
+            paymentSplit, 
             notes 
         } = req.body;
 
@@ -65,7 +65,7 @@ const createTransaction = async (req, res) => {
             customerId,
             collectedBy, // Ensure ID is passed from frontend
             amount,
-            paymentMode,
+            paymentSplit: paymentSplit || [{ mode: 'Cash', amount: Number(amount) }], 
             notes,
             paymentType: 'Mixed'
         });

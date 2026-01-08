@@ -4,6 +4,76 @@ import {
     Wallet, ArrowRight, User, Plus, History, TrendingUp, TrendingDown, CreditCard 
 } from 'lucide-react';
 
+
+
+// --- HELPER: SPLIT PAYMENT INPUT COMPONENT ---
+const PaymentSplitInput = ({ totalAmount, split, setSplit, availableModes }) => {
+    const [currentMode, setCurrentMode] = useState('Cash');
+    const [currentAmount, setCurrentAmount] = useState('');
+
+    const splitTotal = split.reduce((sum, item) => sum + Number(item.amount), 0);
+    const remaining = totalAmount - splitTotal;
+
+    const handleAdd = () => {
+        if (!currentAmount || Number(currentAmount) <= 0) return;
+        setSplit([...split, { mode: currentMode, amount: Number(currentAmount) }]);
+        setCurrentAmount('');
+    };
+
+    const handleRemove = (idx) => {
+        setSplit(split.filter((_, i) => i !== idx));
+    };
+
+    return (
+        <div className="bg-gray-50 p-4 rounded-xl border border-gray-200 mt-2">
+            <div className="flex justify-between items-center mb-2">
+                <label className="text-xs font-bold text-gray-700 uppercase">Payment Split</label>
+                <span className={`text-xs px-2 py-1 rounded ${Math.abs(remaining) < 1 ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
+                    {Math.abs(remaining) < 1 ? 'Balanced' : `Remaining: ₹${remaining}`}
+                </span>
+            </div>
+            
+            {/* List */}
+            <div className="space-y-2 mb-3">
+                {split.map((item, idx) => (
+                    <div key={idx} className="flex justify-between items-center bg-white p-2 rounded border border-gray-200 text-sm">
+                        <span>{item.mode}</span>
+                        <div className="flex items-center gap-2">
+                            <span className="font-bold">₹{item.amount}</span>
+                            <button type="button" onClick={() => handleRemove(idx)} className="text-red-500 hover:text-red-700"><X className="w-3 h-3" /></button>
+                        </div>
+                    </div>
+                ))}
+            </div>
+
+            {/* Input */}
+            {remaining > 0 && (
+                <div className="flex gap-2">
+                    <select 
+                        className="p-2 border rounded text-sm bg-white flex-1"
+                        value={currentMode}
+                        onChange={(e) => setCurrentMode(e.target.value)}
+                    >
+                        {availableModes.map(m => <option key={m.name} value={m.name}>{m.name}</option>)}
+                        {!availableModes.length && <option value="Cash">Cash</option>}
+                    </select>
+                    <input 
+                        type="number" 
+                        placeholder="Amount" 
+                        className="w-24 p-2 border rounded text-sm"
+                        value={currentAmount}
+                        onChange={(e) => setCurrentAmount(e.target.value)}
+                        onFocus={() => !currentAmount && setCurrentAmount(remaining)}
+                    />
+                    <button type="button" onClick={handleAdd} className="bg-blue-600 text-white px-3 rounded hover:bg-blue-700">
+                        <Plus className="w-4 h-4" />
+                    </button>
+                </div>
+            )}
+        </div>
+    );
+};
+
 const LenderCashEntry = ({ showToast }) => {
     // --- STATE ---
     const [lenders, setLenders] = useState([]);
@@ -15,10 +85,11 @@ const LenderCashEntry = ({ showToast }) => {
         lenderId: '',
         amount: '',
         type: 'Deposit', // Deposit or Withdrawal
-        paymentMode: 'Cash', // Default
         notes: ''
     });
 
+     // Split State
+    const [paymentSplit, setPaymentSplit] = useState([]);
     const [selectedLenderBalance, setSelectedLenderBalance] = useState(0);
 
     // --- API CONFIG ---
@@ -78,20 +149,37 @@ const LenderCashEntry = ({ showToast }) => {
 
     const handleSubmit = async (e) => {
         e.preventDefault();
-        if (!formData.lenderId || !formData.amount || !formData.paymentMode) {
+        const splitTotal = paymentSplit.reduce((sum, item) => sum + item.amount, 0);
+        const totalAmount = Number(formData.amount);
+
+        if (!formData.lenderId || !formData.amount) {
             showToast('Error', 'error', 'Please fill all fields');
             return;
         }
 
+         // Validate Split
+        if (paymentSplit.length === 0) {
+             // If no split defined, assume all is default mode (e.g. Cash)
+             // Let's auto-add 'Cash' if empty for UX
+             paymentSplit.push({ mode: 'Cash', amount: totalAmount });
+        } else if (Math.abs(splitTotal - totalAmount) > 1) {
+             showToast('Error', 'error', `Split total (${splitTotal}) does not match Amount (${totalAmount})`);
+             return;
+        }
+
         setLoading(true);
         try {
-            await api.post('/lender-transactions', formData);
+            await api.post('/lender-transactions', {
+                ...formData,
+                paymentSplit
+            });
             
             showToast('Success', 'success', 'Transaction Recorded Successfully');
             
             // Reset Form
             setFormData({ ...formData, amount: '', notes: '' });
-            
+             setPaymentSplit([]);
+             
             // Refresh Data
             fetchLenders(); // To update balance in dropdown
             fetchHistory(); // To update table
@@ -158,29 +246,7 @@ const LenderCashEntry = ({ showToast }) => {
                                     {t}
                                 </button>
                             ))}
-                        </div>
-
-                        {/* Payment Mode (Dynamic from DB) */}
-                        <div>
-                            <label className="block text-sm font-medium text-gray-600 mb-1">Payment Mode</label>
-                            <div className="relative">
-                                <CreditCard className="absolute left-3 top-3 w-5 h-5 text-gray-400" />
-                                <select 
-                                    className="w-full pl-10 p-3 border rounded-xl bg-gray-50 focus:ring-2 focus:ring-blue-500 outline-none appearance-none"
-                                    value={formData.paymentMode}
-                                    onChange={e => setFormData({ ...formData, paymentMode: e.target.value })}
-                                >
-                                    {paymentModes.length > 0 ? (
-                                        paymentModes.map(mode => (
-                                            <option key={mode._id || mode.name} value={mode.name}>{mode.name}</option>
-                                        ))
-                                    ) : (
-                                        <option value="Cash">Cash</option>
-                                    )}
-                                </select>
-                            </div>
-                        </div>
-
+                        </div>                       
                         {/* Amount */}
                         <div>
                             <label className="block text-sm font-medium text-gray-600 mb-1">Amount</label>
@@ -196,6 +262,15 @@ const LenderCashEntry = ({ showToast }) => {
                             </div>
                         </div>
 
+                        {/* Payment Split Input */}
+                        {Number(formData.amount) > 0 && (
+                            <PaymentSplitInput 
+                                totalAmount={Number(formData.amount)} 
+                                split={paymentSplit} 
+                                setSplit={setPaymentSplit} 
+                                availableModes={paymentModes} 
+                            />
+                        )}
                         {/* Notes */}
                         <div>
                             <label className="block text-sm font-medium text-gray-600 mb-1">Notes</label>
@@ -264,9 +339,17 @@ const LenderCashEntry = ({ showToast }) => {
                                                 </span>
                                             </td>
                                             <td className="p-4">
-                                                <span className="px-2 py-1 bg-gray-100 text-gray-600 rounded text-xs font-medium border border-gray-200">
-                                                    {tx.paymentMode || 'Cash'}
-                                                </span>
+                                                {tx.paymentSplit && tx.paymentSplit.length > 0 ? (
+                                                    <div className="space-y-1">
+                                                        {tx.paymentSplit.map((s, i) => (
+                                                            <div key={i} className="text-xs text-gray-600 bg-gray-100 px-2 py-0.5 rounded w-fit border border-gray-200">
+                                                                {s.mode}: ₹{s.amount}
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                ) : (
+                                                    <span className="text-xs text-gray-400">Cash (Legacy)</span>
+                                                )}
                                             </td>
                                             <td className={`p-4 font-bold ${tx.type === 'Deposit' ? 'text-green-600' : 'text-red-600'}`}>
                                                 {tx.type === 'Deposit' ? '+' : '-'} ₹{tx.amount}

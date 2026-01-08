@@ -12,7 +12,6 @@ import {
   Users, FileText, Check, Plus, Trash2, Search, Briefcase 
 } from 'lucide-react-native';
 import * as Location from 'expo-location';
-import {Config} from '../../constants/Config'
 import api from '../../api/client';
 
 // IMPORTANT: Replace with your actual computer IP (e.g., 192.168.x.x)

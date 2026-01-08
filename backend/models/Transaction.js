@@ -23,9 +23,11 @@ const transactionSchema = new mongoose.Schema({
         type: String, 
         enum: ['Interest', 'Principal', 'Penalty', 'Mixed'], 
         default: 'Mixed' 
-    },
-    
-    paymentMode: { type: String, default: 'Cash' }, // Cash, PhonePe, GPay
+    },    
+    paymentSplit: [{
+        mode: { type: String, required: true }, // e.g., 'Cash', 'PhonePe'
+        amount: { type: Number, required: true }
+    }],
     
     // For Daily/Weekly loans: Which specific days does this cover?
     installmentIndexes: [Number], 

@@ -12,10 +12,10 @@ const lenderTransactionSchema = new mongoose.Schema({
         enum: ['Deposit', 'Withdrawal'], 
         default: 'Deposit' 
     }, 
-    
-    // --- NEW FIELD ---
-    paymentMode: { type: String, required: true }, 
-    
+    paymentSplit: [{
+        mode: { type: String, required: true }, // e.g., 'Cash', 'PhonePe'
+        amount: { type: Number, required: true }
+    }],   
     date: { type: Date, default: Date.now },
     notes: String,
     

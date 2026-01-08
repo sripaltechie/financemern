@@ -3,7 +3,9 @@ import axios from 'axios';
 import { BrowserRouter as Router, Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom';
 import { 
   User, Lock, Phone, ArrowRight, LayoutDashboard, LogOut, ShieldAlert, 
-  Wallet, Users, Banknote, Menu, X, Plus, Search, MapPin, Check, Trash2, Home, Briefcase, FileText, Calculator, Percent, FilePenLine, UserCheck,Settings
+  Wallet, Users, Banknote, Menu, X, Plus, Search, MapPin, Check, Trash2, Home, 
+  Briefcase, FileText, Calculator, Percent, FilePenLine, UserCheck, Settings,
+  CreditCard 
 } from 'lucide-react';
 import LenderCashEntry from './LenderCashEntry';
 import PaymentModes from './PaymentModes';
@@ -44,6 +46,74 @@ const Toast = ({ toast, onClose }) => {
   );
 };
 
+// --- HELPER: SPLIT PAYMENT INPUT COMPONENT ---
+const PaymentSplitInput = ({ totalAmount, split, setSplit, availableModes }) => {
+    const [currentMode, setCurrentMode] = useState('Cash');
+    const [currentAmount, setCurrentAmount] = useState('');
+
+    const splitTotal = split.reduce((sum, item) => sum + Number(item.amount), 0);
+    const remaining = totalAmount - splitTotal;
+
+    const handleAdd = () => {
+        if (!currentAmount || Number(currentAmount) <= 0) return;
+        setSplit([...split, { mode: currentMode, amount: Number(currentAmount) }]);
+        setCurrentAmount('');
+    };
+
+    const handleRemove = (idx) => {
+        setSplit(split.filter((_, i) => i !== idx));
+    };
+
+    return (
+        <div className="bg-gray-50 p-4 rounded-xl border border-gray-200 mt-2">
+            <div className="flex justify-between items-center mb-2">
+                <label className="text-xs font-bold text-gray-700 uppercase">Payment Split</label>
+                <span className={`text-xs px-2 py-1 rounded ${Math.abs(remaining) < 1 ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
+                    {Math.abs(remaining) < 1 ? 'Balanced' : `Remaining: ₹${remaining}`}
+                </span>
+            </div>
+            
+            {/* List */}
+            <div className="space-y-2 mb-3">
+                {split.map((item, idx) => (
+                    <div key={idx} className="flex justify-between items-center bg-white p-2 rounded border border-gray-200 text-sm">
+                        <span>{item.mode}</span>
+                        <div className="flex items-center gap-2">
+                            <span className="font-bold">₹{item.amount}</span>
+                            <button type="button" onClick={() => handleRemove(idx)} className="text-red-500 hover:text-red-700"><X className="w-3 h-3" /></button>
+                        </div>
+                    </div>
+                ))}
+            </div>
+
+            {/* Input */}
+            {remaining > 0 && (
+                <div className="flex gap-2">
+                    <select 
+                        className="p-2 border rounded text-sm bg-white flex-1"
+                        value={currentMode}
+                        onChange={(e) => setCurrentMode(e.target.value)}
+                    >
+                        {availableModes.map(m => <option key={m.name} value={m.name}>{m.name}</option>)}
+                        {!availableModes.length && <option value="Cash">Cash</option>}
+                    </select>
+                    <input 
+                        type="number" 
+                        placeholder="Amount" 
+                        className="w-24 p-2 border rounded text-sm"
+                        value={currentAmount}
+                        onChange={(e) => setCurrentAmount(e.target.value)}
+                        onFocus={() => !currentAmount && setCurrentAmount(remaining)}
+                    />
+                    <button type="button" onClick={handleAdd} className="bg-blue-600 text-white px-3 rounded hover:bg-blue-700">
+                        <Plus className="w-4 h-4" />
+                    </button>
+                </div>
+            )}
+        </div>
+    );
+};
+
 // --- 1. SIDEBAR NAVIGATION ---
 const Sidebar = ({ user, onLogout }) => {
   const location = useLocation();
@@ -60,7 +130,6 @@ const Sidebar = ({ user, onLogout }) => {
 
   return (
     <div className="w-64 bg-slate-900 text-white min-h-screen flex flex-col fixed left-0 top-0 z-20 hidden md:flex">
-      {/* Brand */}
       <div className="p-6 flex items-center gap-3 border-b border-slate-800">
         <div className="bg-blue-600 p-2 rounded-lg">
           <Banknote className="w-6 h-6 text-white" />
@@ -71,7 +140,6 @@ const Sidebar = ({ user, onLogout }) => {
         </div>
       </div>
 
-      {/* Nav Items */}
       <div className="flex-1 py-6 px-3 space-y-1">
         {navItems.map((item) => (
           <Link
@@ -89,7 +157,6 @@ const Sidebar = ({ user, onLogout }) => {
         ))}
       </div>
 
-      {/* User Profile Footer */}
       <div className="p-4 border-t border-slate-800">
         <div className="flex items-center gap-3 bg-slate-800 p-3 rounded-xl">
           <div className="w-10 h-10 rounded-full bg-blue-500 flex items-center justify-center text-white font-bold">
@@ -109,7 +176,7 @@ const Sidebar = ({ user, onLogout }) => {
 };
 
 
-// --- 2. LOAN FORM MODAL (Updated for New Schema Logic) ---
+// --- 2. LOAN FORM MODAL (Updated for Split Payments) ---
 const LoanForm = ({ customer, collectionBoys, onClose, onSuccess, onUpdateCustomer, showToast }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -126,17 +193,19 @@ const LoanForm = ({ customer, collectionBoys, onClose, onSuccess, onUpdateCustom
   const [lenderSplits, setLenderSplits] = useState([]); 
   const [currentLenderSelection, setCurrentLenderSelection] = useState({ userId: '', amount: '' });
 
+  // Disbursement Split State
+  const [disbursementSplit, setDisbursementSplit] = useState([]);
+
   // State for Form
   const [formData, setFormData] = useState({
     customerId: customer._id,
     loanType: 'Daily',
-    disbursementMode: 'Cash', // Default
     financials: {
       principalAmount: '',
       interestRate: '', 
-      duration: 100, // Default 100 Days for Daily
-      interestDurationMonths: 3, // NEW: Default 3 months interest for 100 days
-      fixedInstallmentAmount: '', // For Weekly
+      duration: 100, 
+      interestDurationMonths: 3, 
+      fixedInstallmentAmount: '', 
       deductionConfig: {
         interest: 'End',
         adminCommission: 'End', 
@@ -153,11 +222,9 @@ const LoanForm = ({ customer, collectionBoys, onClose, onSuccess, onUpdateCustom
   const [deductions, setDeductions] = useState({ interest: 0, adminComm: 0, staffComm: 0 });
 
   useEffect(() => {
-    // Fetch Lenders
     const fetchLenders = async () => {
         try { const { data } = await api.get('/users?role=lender'); setLendersList(data); } catch (err) {}
     };
-    // Fetch Payment Modes
     const fetchModes = async () => {
         try { 
             const { data } = await api.get('/settings'); 
@@ -167,7 +234,6 @@ const LoanForm = ({ customer, collectionBoys, onClose, onSuccess, onUpdateCustom
 
     fetchLenders();
     fetchModes();
-    
     if (!customer.collectionBoyId) setMissingLinkMode(true);
   }, [customer]);
 
@@ -197,8 +263,6 @@ const LoanForm = ({ customer, collectionBoys, onClose, onSuccess, onUpdateCustom
     let staffCommDed = 0;
 
     if (formData.financials.deductionConfig.interest === 'Upfront') {
-      // Use the manual months input for calculation
-
       interestDed = (principal * rate * intMonths) / 100;
     }
 
@@ -269,12 +333,25 @@ const LoanForm = ({ customer, collectionBoys, onClose, onSuccess, onUpdateCustom
     e.preventDefault();
     setLoading(true);
 
+    const splitTotal = disbursementSplit.reduce((sum, item) => sum + item.amount, 0);
+
     if (lenderSplits.length === 0) { setError("Link at least one lender."); setLoading(false); return; }
     if (Math.abs(remainingFund) > 1) { setError(`Funding mismatch. Diff: ₹${remainingFund}`); setLoading(false); return; }
+    
+    // Validate Split vs Net Disbursement
+    let finalSplit = [...disbursementSplit];
+    if (finalSplit.length === 0) {
+        finalSplit = [{ mode: 'Cash', amount: netDisbursement }];
+    } else if (Math.abs(splitTotal - netDisbursement) > 1) {
+        setError(`Disbursement Split Total (${splitTotal}) must match Net Cash (${netDisbursement})`);
+        setLoading(false);
+        return;
+    }
 
     try {
       const payload = {
           ...formData,
+          disbursementSplit: finalSplit,
           lenders: lenderSplits.map(l => ({ userId: l.userId, investedAmount: l.amount, repaidAmount: 0, priority: l.priority, status: 'Active' }))
       };
       await api.post('/loans', payload);
@@ -308,7 +385,6 @@ const LoanForm = ({ customer, collectionBoys, onClose, onSuccess, onUpdateCustom
                <input type="number" className="w-full p-2 border rounded font-bold" value={formData.financials.principalAmount} onChange={e => updateFinancials('principalAmount', e.target.value)} required />
             </div>
             <div>
-               {/* DYNAMIC LABEL FOR DURATION */}
                <label className="block text-sm font-medium mb-1">
                    {formData.loanType === 'Daily' ? 'Days' : formData.loanType === 'Weekly' ? 'Weeks' : 'Months'}
                </label>
@@ -319,28 +395,11 @@ const LoanForm = ({ customer, collectionBoys, onClose, onSuccess, onUpdateCustom
                <input type="number" className="w-full p-2 border rounded" value={formData.financials.interestRate} onChange={e => updateFinancials('interestRate', e.target.value)} required />
             </div>
           </div>
-            {/* NEW: Interest Duration Input (Separate Row or inline) */}
-
+           
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div>
                   <label className="block text-sm font-medium mb-1 text-blue-800">Interest Calc (Months)</label>
                   <input type="number" className="w-full p-2 border rounded border-blue-200 bg-blue-50" value={formData.financials.interestDurationMonths} onChange={e => updateFinancials('interestDurationMonths', e.target.value)} />
-              </div>
-
-              {/* NEW: Disbursement Mode */}
-              <div>
-                  <label className="block text-sm font-medium mb-1 text-gray-700">Disbursement Mode</label>
-                  <select 
-                      className="w-full p-2 border rounded bg-white" 
-                      value={formData.disbursementMode} 
-                      onChange={e => setFormData({ ...formData, disbursementMode: e.target.value })}
-                  >
-                      {paymentModes.length > 0 ? (
-                          paymentModes.map(m => <option key={m.name} value={m.name}>{m.name}</option>)
-                      ) : (
-                          <option value="Cash">Cash</option>
-                      )}
-                  </select>
               </div>
           </div>
 
@@ -356,8 +415,6 @@ const LoanForm = ({ customer, collectionBoys, onClose, onSuccess, onUpdateCustom
           <div className="bg-blue-50 p-4 rounded-xl border border-blue-100">
              <h3 className="font-semibold text-blue-900 mb-3 flex items-center gap-2"><Calculator className="w-4 h-4" /> Deductions</h3>
              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                
-                {/* Interest Toggle */}
                 <div>
                     <label className="text-xs font-bold text-blue-800 uppercase block mb-2">Interest</label>
                     <div className="flex bg-white rounded p-0.5 border w-fit">
@@ -366,39 +423,30 @@ const LoanForm = ({ customer, collectionBoys, onClose, onSuccess, onUpdateCustom
                         ))}
                     </div>
                 </div>
-
-                {/* Admin Comm */}
                 <div>
-                   <div className="flex justify-between items-center mb-1">
-                      <label className="text-xs font-bold text-blue-800 uppercase">Admin Comm.</label>
-                      <div className="flex bg-white rounded p-0.5 border">
-                        {['Upfront', 'End'].map(type => (
-                          <button key={type} type="button" onClick={() => updateNestedFinancials('deductionConfig', 'adminCommission', type)} className={`px-2 py-0.5 text-xs rounded ${formData.financials.deductionConfig.adminCommission === type ? 'bg-blue-600 text-white' : 'text-gray-500'}`}>{type}</button>
-                        ))}
-                      </div>
-                   </div>
-                   <div className="flex gap-2">
-                      <input type="number" placeholder="%" className="w-1/3 p-2 border rounded text-sm" value={formData.financials.adminCommission.value} onChange={e => handleCommissionChange('adminCommission', 'value', e.target.value)} />
-                      <input type="number" placeholder="₹" className="w-2/3 p-2 border rounded text-sm font-bold" value={formData.financials.adminCommission.amount} onChange={e => handleCommissionChange('adminCommission', 'amount', e.target.value)} />
-                   </div>
+                   <div className="flex justify-between items-center mb-1"><label className="text-xs font-bold text-blue-800 uppercase">Admin Comm.</label><div className="flex bg-white rounded p-0.5 border">{['Upfront', 'End'].map(type => (<button key={type} type="button" onClick={() => updateNestedFinancials('deductionConfig', 'adminCommission', type)} className={`px-2 py-0.5 text-xs rounded ${formData.financials.deductionConfig.adminCommission === type ? 'bg-blue-600 text-white' : 'text-gray-500'}`}>{type}</button>))}</div></div>
+                   <div className="flex gap-2"><input type="number" placeholder="%" className="w-1/3 p-2 border rounded text-sm" value={formData.financials.adminCommission.value} onChange={e => handleCommissionChange('adminCommission', 'value', e.target.value)} /><input type="number" placeholder="₹" className="w-2/3 p-2 border rounded text-sm font-bold" value={formData.financials.adminCommission.amount} onChange={e => handleCommissionChange('adminCommission', 'amount', e.target.value)} /></div>
                 </div>
-
-                {/* Staff Comm */}
                 <div>
-                   <div className="flex justify-between items-center mb-1">
-                      <label className="text-xs font-bold text-blue-800 uppercase">Staff Comm.</label>
-                      <div className="flex bg-white rounded p-0.5 border">
-                        {['Upfront', 'End'].map(type => (
-                          <button key={type} type="button" onClick={() => updateNestedFinancials('deductionConfig', 'staffCommission', type)} className={`px-2 py-0.5 text-xs rounded ${formData.financials.deductionConfig.staffCommission === type ? 'bg-blue-600 text-white' : 'text-gray-500'}`}>{type}</button>
-                        ))}
-                      </div>
-                   </div>
-                   <div className="flex gap-2">
-                      <input type="number" placeholder="%" className="w-1/3 p-2 border rounded text-sm" value={formData.financials.staffCommission.value} onChange={e => handleCommissionChange('staffCommission', 'value', e.target.value)} />
-                      <input type="number" placeholder="₹" className="w-2/3 p-2 border rounded text-sm font-bold" value={formData.financials.staffCommission.amount} onChange={e => handleCommissionChange('staffCommission', 'amount', e.target.value)} />
-                   </div>
+                   <div className="flex justify-between items-center mb-1"><label className="text-xs font-bold text-blue-800 uppercase">Staff Comm.</label><div className="flex bg-white rounded p-0.5 border">{['Upfront', 'End'].map(type => (<button key={type} type="button" onClick={() => updateNestedFinancials('deductionConfig', 'staffCommission', type)} className={`px-2 py-0.5 text-xs rounded ${formData.financials.deductionConfig.staffCommission === type ? 'bg-blue-600 text-white' : 'text-gray-500'}`}>{type}</button>))}</div></div>
+                   <div className="flex gap-2"><input type="number" placeholder="%" className="w-1/3 p-2 border rounded text-sm" value={formData.financials.staffCommission.value} onChange={e => handleCommissionChange('staffCommission', 'value', e.target.value)} /><input type="number" placeholder="₹" className="w-2/3 p-2 border rounded text-sm font-bold" value={formData.financials.staffCommission.amount} onChange={e => handleCommissionChange('staffCommission', 'amount', e.target.value)} /></div>
                 </div>
              </div>
+          </div>
+
+          {/* NEW: Payment Split for Disbursement */}
+          <div className="bg-indigo-50 p-4 rounded-xl border border-indigo-100">
+              <h3 className="font-semibold text-indigo-900 mb-2 text-sm flex items-center gap-2">
+                  <CreditCard className="w-4 h-4" /> Disbursement Mode
+              </h3>
+              {netDisbursement > 0 && (
+                  <PaymentSplitInput 
+                      totalAmount={netDisbursement}
+                      split={disbursementSplit}
+                      setSplit={setDisbursementSplit}
+                      availableModes={paymentModes}
+                  />
+              )}
           </div>
 
           <div className="bg-gray-50 p-4 rounded-xl border border-gray-200">
@@ -435,8 +483,6 @@ const LoanForm = ({ customer, collectionBoys, onClose, onSuccess, onUpdateCustom
   );
 };
 
-
-
 // --- 3. CUSTOMER FORM MODAL ---
 const CustomerForm = ({ onClose, onSuccess, existingCustomers, collectionBoys }) => {
   const [formData, setFormData] = useState({
@@ -458,7 +504,7 @@ const CustomerForm = ({ onClose, onSuccess, existingCustomers, collectionBoys })
     familyMembers: [],
     proofs: [],
     referredBy: '',
-    collectionBoyId: '' // NEW Field
+    collectionBoyId: '' 
   });
 
   const [newFamily, setNewFamily] = useState({ name: '', relation: '', mobile: '' });
@@ -550,7 +596,6 @@ const CustomerForm = ({ onClose, onSuccess, existingCustomers, collectionBoys })
             </div>
           )}
 
-          {/* Basic Info */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
@@ -593,7 +638,6 @@ const CustomerForm = ({ onClose, onSuccess, existingCustomers, collectionBoys })
             </div>
           </div>
 
-          {/* Locations */}
           <div className="space-y-3">
             <h3 className="font-semibold text-gray-800 flex items-center gap-2">
               <MapPin className="w-4 h-4 text-blue-500" /> Locations
@@ -663,7 +707,6 @@ const CustomerForm = ({ onClose, onSuccess, existingCustomers, collectionBoys })
             </div>
           </div>
 
-          {/* KYC & Proofs */}
           <div className="space-y-3">
             <h3 className="font-semibold text-gray-800 flex items-center gap-2">
               <ShieldAlert className="w-4 h-4 text-amber-500" /> KYC & Documents
@@ -704,7 +747,6 @@ const CustomerForm = ({ onClose, onSuccess, existingCustomers, collectionBoys })
             </div>
           </div>
 
-          {/* References, Family & Collection Boy */}
           <div className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                <div className="relative">
@@ -726,11 +768,11 @@ const CustomerForm = ({ onClose, onSuccess, existingCustomers, collectionBoys })
                   </div>
                   
                   {showReferrerDropdown && referrerQuery && (
-                     <div className="absolute z-20 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-xl max-h-40 overflow-y-auto">
-                        {existingCustomers?.filter(c => 
+                      <div className="absolute z-20 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-xl max-h-40 overflow-y-auto">
+                         {existingCustomers?.filter(c => 
                             c.fullName.toLowerCase().includes(referrerQuery.toLowerCase()) || 
                             c.mobile.includes(referrerQuery)
-                        ).length > 0 ? (
+                         ).length > 0 ? (
                             existingCustomers.filter(c => 
                                 c.fullName.toLowerCase().includes(referrerQuery.toLowerCase()) || 
                                 c.mobile.includes(referrerQuery)
@@ -748,10 +790,10 @@ const CustomerForm = ({ onClose, onSuccess, existingCustomers, collectionBoys })
                                     <p className="text-xs text-gray-500">{c.mobile}</p>
                                 </div>
                             ))
-                        ) : (
+                         ) : (
                             <div className="p-3 text-sm text-gray-400 text-center">No matches found</div>
-                        )}
-                     </div>
+                         )}
+                      </div>
                   )}
                </div>
 
@@ -776,44 +818,44 @@ const CustomerForm = ({ onClose, onSuccess, existingCustomers, collectionBoys })
               <div className="space-y-2">
                 {formData.familyMembers.map((member, idx) => (
                   <div key={idx} className="flex items-center justify-between bg-white p-2 rounded border border-gray-200 text-sm">
-                     <span className="flex items-center gap-2">
-                       <Users className="w-3 h-3 text-gray-400" />
-                       {member.name} <span className="text-gray-400">({member.relation})</span>
-                       {member.mobile && <span className="text-xs bg-gray-100 px-1.5 py-0.5 rounded text-gray-600">{member.mobile}</span>}
-                     </span>
-                     <button type="button" onClick={() => handleRemoveFamily(idx)} className="text-red-500 hover:bg-red-50 p-1 rounded">
-                       <Trash2 className="w-4 h-4" />
-                     </button>
+                      <span className="flex items-center gap-2">
+                        <Users className="w-3 h-3 text-gray-400" />
+                        {member.name} <span className="text-gray-400">({member.relation})</span>
+                        {member.mobile && <span className="text-xs bg-gray-100 px-1.5 py-0.5 rounded text-gray-600">{member.mobile}</span>}
+                      </span>
+                      <button type="button" onClick={() => handleRemoveFamily(idx)} className="text-red-500 hover:bg-red-50 p-1 rounded">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
                   </div>
                 ))}
               </div>
 
               <div className="flex gap-2">
-                 <input 
-                   placeholder="Name"
-                   className="flex-1 p-2 border rounded text-sm"
-                   value={newFamily.name}
-                   onChange={e => setNewFamily({...newFamily, name: e.target.value})}
-                 />
-                 <input 
-                   placeholder="Relation"
-                   className="w-24 p-2 border rounded text-sm"
-                   value={newFamily.relation}
-                   onChange={e => setNewFamily({...newFamily, relation: e.target.value})}
-                 />
-                 <input 
-                   placeholder="Mobile"
-                   className="w-32 p-2 border rounded text-sm"
-                   value={newFamily.mobile}
-                   onChange={e => setNewFamily({...newFamily, mobile: e.target.value})}
-                 />
-                 <button 
-                   type="button" 
-                   onClick={handleAddFamily}
-                   className="bg-gray-800 text-white px-3 rounded hover:bg-black"
-                 >
-                   <Plus className="w-4 h-4" />
-                 </button>
+                  <input 
+                    placeholder="Name"
+                    className="flex-1 p-2 border rounded text-sm"
+                    value={newFamily.name}
+                    onChange={e => setNewFamily({...newFamily, name: e.target.value})}
+                  />
+                  <input 
+                    placeholder="Relation"
+                    className="w-24 p-2 border rounded text-sm"
+                    value={newFamily.relation}
+                    onChange={e => setNewFamily({...newFamily, relation: e.target.value})}
+                  />
+                  <input 
+                    placeholder="Mobile"
+                    className="w-32 p-2 border rounded text-sm"
+                    value={newFamily.mobile}
+                    onChange={e => setNewFamily({...newFamily, mobile: e.target.value})}
+                  />
+                  <button 
+                    type="button" 
+                    onClick={handleAddFamily}
+                    className="bg-gray-800 text-white px-3 rounded hover:bg-black"
+                  >
+                    <Plus className="w-4 h-4" />
+                  </button>
               </div>
             </div>
           </div>
@@ -896,7 +938,6 @@ const CustomerManager = ({ showToast }) => {
           showToast={showToast}
           onSuccess={() => {
             setIsLoanModalOpen(false);
-            // alert(`Loan Created for ${selectedCustomer.fullName}!`);
             fetchCustomers();
           }}
         />
@@ -979,13 +1020,13 @@ const CustomerManager = ({ showToast }) => {
                 <h2 className="text-xl font-bold text-gray-800">{selectedCustomer.fullName}</h2>
               </div>
               <div className="flex gap-2">
-                 <button className="px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50">Edit</button>
-                 <button 
-                   onClick={() => setIsLoanModalOpen(true)} // --- NEW: Open Loan Modal ---
-                   className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 shadow-md shadow-blue-200"
-                 >
-                   New Loan
-                 </button>
+                  <button className="px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50">Edit</button>
+                  <button 
+                    onClick={() => setIsLoanModalOpen(true)} // --- NEW: Open Loan Modal ---
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 shadow-md shadow-blue-200"
+                  >
+                    New Loan
+                  </button>
               </div>
             </div>
 
@@ -1047,24 +1088,24 @@ const CustomerManager = ({ showToast }) => {
                     </div>
                     <div className="p-4 space-y-4">
                       <div className="flex items-start gap-3">
-                         <div className="mt-1 w-2 h-2 rounded-full bg-blue-500 shrink-0"></div>
-                         <div>
-                            <p className="text-xs text-gray-500 font-bold uppercase">Residence</p>
-                            <p className="text-sm text-gray-800">{selectedCustomer.locations?.residence?.addressText || 'No address saved'}</p>
-                         </div>
+                          <div className="mt-1 w-2 h-2 rounded-full bg-blue-500 shrink-0"></div>
+                          <div>
+                             <p className="text-xs text-gray-500 font-bold uppercase">Residence</p>
+                             <p className="text-sm text-gray-800">{selectedCustomer.locations?.residence?.addressText || 'No address saved'}</p>
+                          </div>
                       </div>
                       <div className="flex items-start gap-3">
-                         <div className="mt-1 w-2 h-2 rounded-full bg-green-500 shrink-0"></div>
-                         <div>
-                            <p className="text-xs text-gray-500 font-bold uppercase">Collection Point ({selectedCustomer.locations?.collectionPoint?.placeType})</p>
-                            {selectedCustomer.locations?.collectionPoint?.geo?.lat ? (
-                              <p className="text-sm font-mono text-gray-700 mt-1 bg-gray-50 px-2 py-1 rounded inline-block">
-                                {selectedCustomer.locations.collectionPoint.geo.lat}, {selectedCustomer.locations.collectionPoint.geo.lng}
-                              </p>
-                            ) : (
-                              <p className="text-sm text-gray-800">{selectedCustomer.locations?.collectionPoint?.addressText || 'No location saved'}</p>
-                            )}
-                         </div>
+                          <div className="mt-1 w-2 h-2 rounded-full bg-green-500 shrink-0"></div>
+                          <div>
+                             <p className="text-xs text-gray-500 font-bold uppercase">Collection Point ({selectedCustomer.locations?.collectionPoint?.placeType})</p>
+                             {selectedCustomer.locations?.collectionPoint?.geo?.lat ? (
+                               <p className="text-sm font-mono text-gray-700 mt-1 bg-gray-50 px-2 py-1 rounded inline-block">
+                                 {selectedCustomer.locations.collectionPoint.geo.lat}, {selectedCustomer.locations.collectionPoint.geo.lng}
+                               </p>
+                             ) : (
+                               <p className="text-sm text-gray-800">{selectedCustomer.locations?.collectionPoint?.addressText || 'No location saved'}</p>
+                             )}
+                          </div>
                       </div>
                     </div>
                   </div>
@@ -1205,7 +1246,7 @@ const AuthScreen = ({ onLogin }) => {
       <div className="bg-white w-full max-w-md rounded-2xl shadow-xl overflow-hidden z-10 relative">
         <div className="px-8 pt-10 pb-6 text-center">
           <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-50 rounded-full mb-4">
-             <Lock className="w-8 h-8 text-blue-600" />
+              <Lock className="w-8 h-8 text-blue-600" />
           </div>
           <h2 className="text-3xl font-extrabold text-gray-900 tracking-tight">
             {isLogin ? 'Welcome Back' : 'Get Started'}

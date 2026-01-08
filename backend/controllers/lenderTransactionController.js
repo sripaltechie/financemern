@@ -5,7 +5,7 @@ const User = require('../models/User');
 // @route   POST /api/lender-transactions
 const addLenderTransaction = async (req, res) => {
     try {
-         const { lenderId, amount, type, notes, paymentMode } = req.body;
+         const { lenderId, amount, type, notes, paymentSplit } = req.body;
 
         // 1. Validate Lender
         const lender = await User.findById(lenderId);
@@ -18,7 +18,7 @@ const addLenderTransaction = async (req, res) => {
             lenderId,
             amount: Number(amount),
             type: type || 'Deposit',
-            paymentMode: paymentMode || 'Cash', // Default to Cash if missing
+            paymentSplit: paymentSplit || [{ mode: 'Cash', amount: Number(amount) }], 
             notes
         });
 

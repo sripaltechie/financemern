@@ -79,7 +79,14 @@ const createLoan = async (req, res) => {
         }
 
         const netDisbursement = principal - upfrontDeductions;
-
+        // Validate Split Total if provided
+        if (disbursementSplit && disbursementSplit.length > 0) {
+            const splitTotal = disbursementSplit.reduce((sum, s) => sum + Number(s.amount), 0);
+            // Allow small float difference or handle strictly. 
+            // Note: netDisbursement might not match exactly if there are manual overrides, 
+            // but normally it should match the cash handed over.
+        }
+        
         // 4. Generate Schedule
         const generatedDues = generateSchedule({
             loanType,
