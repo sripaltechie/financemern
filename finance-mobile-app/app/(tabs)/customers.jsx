@@ -4,7 +4,8 @@ import {
   TouchableOpacity, ActivityIndicator, Alert, RefreshControl 
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
-import axios from 'axios';
+// import axios from 'axios';
+import api from '../../api/client';
 import { Search, Plus, User, Phone, MapPin, Trash2, Edit3, ChevronRight } from 'lucide-react-native';
 import { Config } from '../../constants/Config';
 
@@ -21,7 +22,7 @@ export default function CustomersScreen() {
 
   const fetchCustomers = async () => {
     try {
-      const { data } = await axios.get(`${Config.API_URL}/customers`);
+      const { data } = await api.get(`/customers`);
       setCustomers(data);
       setFilteredCustomers(data);
     } catch (err) {
@@ -61,7 +62,7 @@ export default function CustomersScreen() {
             try {
               // Assuming your backend has a DELETE route or using PUT to deactivate
               // For now, we'll simulate the UI update
-              await axios.delete(`${Config.API_URL}/customers/${id}`);
+              await api.delete(`/customers/${id}`);
               setCustomers(prev => prev.filter(c => c._id !== id));
               Alert.alert("Success", "Customer removed.");
             } catch (err) {
@@ -98,30 +99,43 @@ export default function CustomersScreen() {
         </Text>
       </View>
 
-      <View style={styles.actions}>
-        <TouchableOpacity 
-          style={styles.actionBtn}
-          onPress={() => router.push(`/customer/manage?id=${item._id}`)}
-        >
-          <Edit3 size={18} color="#2563eb" />
-          <Text style={[styles.actionText, { color: '#2563eb' }]}>Edit</Text>
-        </TouchableOpacity>
+      {/* REFINED ACTIONS GRID */}
+      <View style={styles.actionsGrid}>
+        <View style={styles.actionRow}>
+          <TouchableOpacity 
+            style={styles.secondaryBtn}
+            onPress={() => router.push(`/customer/manage?id=${item._id}`)}
+          >
+            <Edit3 size={16} color="#2563eb" />
+            <Text style={styles.secondaryBtnText}>Edit</Text>
+          </TouchableOpacity>
 
-        <TouchableOpacity 
-          style={styles.actionBtn}
-          onPress={() => handleDelete(item._id, item.fullName)}
-        >
-          <Trash2 size={18} color="#ef4444" />
-          <Text style={[styles.actionText, { color: '#ef4444' }]}>Delete</Text>
-        </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.secondaryBtn}
+            onPress={() => handleDelete(item._id, item.fullName)}
+          >
+            <Trash2 size={16} color="#ef4444" />
+            <Text style={[styles.secondaryBtnText, { color: '#ef4444' }]}>Delete</Text>
+          </TouchableOpacity>
+        </View>
 
-        <TouchableOpacity 
-          style={[styles.actionBtn, styles.viewBtn]}
-          onPress={() => router.push(`/customer/details?id=${item._id}`)}
-        >
-          <Text style={styles.viewBtnText}>View Details</Text>
-          <ChevronRight size={16} color="#fff" />
-        </TouchableOpacity>
+        <View style={styles.actionRow}>
+          <TouchableOpacity 
+            style={[styles.primaryBtn, { backgroundColor: '#f1f5f9' }]}
+            onPress={() => router.push(`/customer/details?id=${item._id}`)}
+          >
+            <Text style={[styles.primaryBtnText, { color: '#475569' }]}>Details</Text>
+            <ChevronRight size={14} color="#475569" />
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={[styles.primaryBtn, { backgroundColor: '#2563eb' }]}
+            onPress={() => router.push(`/loan/create?customerId=${item._id}`)}
+          >
+            <Text style={styles.primaryBtnText}>New Loan</Text>
+            <Plus size={14} color="#fff" />
+          </TouchableOpacity>
+        </View>
       </View>
     </View>
   );
@@ -186,15 +200,7 @@ const styles = StyleSheet.create({
   searchIcon: { marginRight: 10 },
   searchInput: { flex: 1, height: 50, fontSize: 16, color: '#1e293b' },
   list: { paddingHorizontal: 16, paddingBottom: 120 },
-  card: { 
-    backgroundColor: '#fff', 
-    borderRadius: 20, 
-    padding: 16, 
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: '#f1f5f9',
-    elevation: 3
-  },
+  
   cardHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
   avatar: { 
     width: 48, 
@@ -203,6 +209,59 @@ const styles = StyleSheet.create({
     backgroundColor: '#dbeafe', 
     justifyContent: 'center', 
     alignItems: 'center' 
+  },
+  card: { 
+    backgroundColor: '#fff', 
+    borderRadius: 24, 
+    padding: 16, 
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#f1f5f9',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowRadius: 10
+  },
+  actionsGrid: {
+    borderTopWidth: 1,
+    borderTopColor: '#f1f5f9',
+    paddingTop: 12,
+    gap: 8
+  },
+  actionRow: {
+    flexDirection: 'row',
+    gap: 8
+  },
+  secondaryBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    backgroundColor: '#f8fafc',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e2e8f0'
+  },
+  secondaryBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#2563eb'
+  },
+  primaryBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 12,
+    borderRadius: 12
+  },
+  primaryBtnText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#fff'
   },
   info: { flex: 1, marginLeft: 12 },
   name: { fontSize: 18, fontWeight: 'bold', color: '#0f172a' },
@@ -230,6 +289,7 @@ const styles = StyleSheet.create({
   actionText: { fontSize: 12, fontWeight: 'bold' },
   viewBtn: { backgroundColor: '#0f172a', marginLeft: 'auto' },
   viewBtnText: { color: '#fff', fontSize: 12, fontWeight: 'bold' },
+
   fab: { 
     position: 'absolute', 
     bottom: 130, // Above the 110 height tab bar

@@ -11,6 +11,7 @@ import {
   ScrollView, 
   Alert 
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import { Config } from '../constants/Config';
 
@@ -63,6 +64,9 @@ export default function AuthScreen() {
       const response = await axios.post(`${Config.API_URL}${endpoint}`, payload);
       const { data } = response;
 
+      // SAVE TO STORAGE
+      await AsyncStorage.setItem('finance_user', JSON.stringify(data));
+      console.log(JSON.stringify(data));
       // 3. Success Feedback
       Alert.alert("Success", `Welcome back, ${data.name}!`);
       

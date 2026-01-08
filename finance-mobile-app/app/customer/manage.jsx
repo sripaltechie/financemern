@@ -4,16 +4,19 @@ import {
   ScrollView, Alert, ActivityIndicator, KeyboardAvoidingView, Platform 
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import axios from 'axios';
+// import axios from 'axios';
+// import api from '../../api/client';
+
 import { 
   ChevronLeft, Save, MapPin, User, ShieldCheck, 
   Users, FileText, Check, Plus, Trash2, Search, Briefcase 
 } from 'lucide-react-native';
 import * as Location from 'expo-location';
-import { Config } from '../../constants/Config';
+import {Config} from '../../constants/Config'
+import api from '../../api/client';
 
-// IMPORTANT: Replace with your actual computer IP
-// const API_URL = 'http://192.168.1.10:5000/api'; 
+// IMPORTANT: Replace with your actual computer IP (e.g., 192.168.x.x)
+
 
 export default function ManageCustomer() {
   const router = useRouter();
@@ -21,7 +24,11 @@ export default function ManageCustomer() {
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(false);
   const [collectionBoys, setCollectionBoys] = useState([]);
-  const [allCustomers, setAllCustomers] = useState([]); // For Referrer search
+  const [allCustomers, setAllCustomers] = useState([]);
+  
+  // Search states for dropdowns
+  const [referrerQuery, setReferrerQuery] = useState('');
+  const [showReferrerList, setShowReferrerList] = useState(false);
 
   const [formData, setFormData] = useState({
     fullName: '',
@@ -31,7 +38,7 @@ export default function ManageCustomer() {
       collectionPoint: { 
         addressText: '', 
         placeType: 'Home', 
-        geo: { lat: null, lng: null } 
+        geo: { lat: '', lng: '' } 
       }
     },
     kyc: {
@@ -58,53 +65,97 @@ export default function ManageCustomer() {
 
   const fetchInitialData = async () => {
     try {
+      // Use Promise.all to fetch both lists simultaneously
       const [boysRes, custRes] = await Promise.all([
-        axios.get(`${Config.API_URL}/users?role=collection_boy`),
-        axios.get(`${Config.API_URL}/customers`)
+        api.get(`/users?role=collection_boy`).catch(e => ({ data: [] })),
+        api.get(`/customers`).catch(e => ({ data: [] }))
       ]);
       setCollectionBoys(boysRes.data);
       setAllCustomers(custRes.data);
     } catch (err) {
-      console.log("Error fetching staff/customers:", err);
+      console.log("Fetch Error:", err.message);
     }
   };
 
   const fetchCustomerDetails = async () => {
     setFetching(true);
     try {
-      const { data } = await axios.get(`${Config.API_URL}/customers/${id}`);
+      const { data } = await api.get(`/customers/${id}`);
       setFormData({
         ...data,
         incomeAmount: data.incomeAmount?.toString() || '',
         referredBy: data.referredBy?._id || data.referredBy || '',
-        collectionBoyId: data.collectionBoyId?._id || data.collectionBoyId || ''
+        collectionBoyId: data.collectionBoyId?._id || data.collectionBoyId || '',
+        locations: {
+          ...data.locations,
+          collectionPoint: {
+            ...data.locations?.collectionPoint,
+            geo: {
+              lat: data.locations?.collectionPoint?.geo?.lat?.toString() || '',
+              lng: data.locations?.collectionPoint?.geo?.lng?.toString() || ''
+            }
+          }
+        }
       });
+      // Set referrer query if exists
+      if (data.referredBy) {
+        setReferrerQuery(data.referredBy.fullName || '');
+      }
     } catch (err) {
-      Alert.alert("Error", "Could not load customer data. Check your connection.");
+      Alert.alert("Load Error", "Check your backend server and IP.");
     } finally {
       setFetching(false);
     }
   };
 
-  const getCurrentLocation = async () => {
-    let { status } = await Location.requestForegroundPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Permission Denied', 'Permission to access location was denied');
-      return;
-    }
-
-    let location = await Location.getCurrentPositionAsync({});
-    setFormData(prev => ({
-      ...prev,
-      locations: {
-        ...prev.locations,
-        collectionPoint: {
-          ...prev.locations.collectionPoint,
-          geo: { lat: location.coords.latitude, lng: location.coords.longitude }
-        }
+const getCurrentLocation = async () => {
+    try {
+      // 1. Check Permissions
+      let { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission Denied', 'Permission to access location was denied');
+        return;
       }
-    }));
-    Alert.alert("Location Saved", "Current coordinates captured.");
+
+      // 2. Check if GPS hardware is actually ON
+      const isServicesEnabled = await Location.hasServicesEnabledAsync();
+      if (!isServicesEnabled) {
+        Alert.alert(
+          "Location Services Off",
+          "Please turn on your device's GPS/Location setting from the notification panel or settings."
+        );
+        return;
+      }
+
+      // 3. Attempt fetch with accuracy setting (Balanced is faster)
+      setLoading(true);
+      const location = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+
+      setFormData(prev => ({
+        ...prev,
+        locations: {
+          ...prev.locations,
+          collectionPoint: {
+            ...prev.locations.collectionPoint,
+            geo: { 
+              lat: location.coords.latitude.toString(), 
+              lng: location.coords.longitude.toString() 
+            }
+          }
+        }
+      }));
+      Alert.alert("Success", "Coordinates captured successfully.");
+    } catch (err) {
+      console.log("GPS Fetch Error:", err);
+      Alert.alert(
+        "Location Error", 
+        "Current location is unavailable. Try again or enter coordinates manually."
+      );
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleAddFamily = () => {
@@ -133,7 +184,7 @@ export default function ManageCustomer() {
 
   const handleSave = async () => {
     if (!formData.fullName || !formData.mobile) {
-      Alert.alert("Required Fields", "Name and Mobile are mandatory.");
+      Alert.alert("Missing Data", "FullName and Mobile are required.");
       return;
     }
 
@@ -141,20 +192,30 @@ export default function ManageCustomer() {
     try {
       const payload = {
         ...formData,
-        incomeAmount: Number(formData.incomeAmount) || 0
+        incomeAmount: Number(formData.incomeAmount) || 0,
+        locations: {
+          ...formData.locations,
+          collectionPoint: {
+            ...formData.locations.collectionPoint,
+            geo: {
+              lat: parseFloat(formData.locations.collectionPoint.geo.lat) || null,
+              lng: parseFloat(formData.locations.collectionPoint.geo.lng) || null
+            }
+          }
+        }
       };
 
       if (id) {
-        await axios.put(`${Config.API_URL}/customers/${id}`, payload);
-        Alert.alert("Success", "Customer updated successfully.");
+        await api.put(`/customers/${id}`, payload);
+        Alert.alert("Success", "Customer updated.");
       } else {
-        await axios.post(`${Config.API_URL}/customers`, payload);
-        Alert.alert("Success", "Customer created successfully.");
+        await api.post(`/customers`, payload);
+        Alert.alert("Success", "Customer created.");
       }
       router.back();
     } catch (err) {
-      const msg = err.response?.data?.message || "Failed to save customer. Is server running?";
-      Alert.alert("Error", msg);
+      const msg = err.response?.data?.message || "Check connection or backend logs.";
+      Alert.alert("Save Failed", msg);
     } finally {
       setLoading(false);
     }
@@ -164,7 +225,7 @@ export default function ManageCustomer() {
     return (
       <View style={styles.center}>
         <ActivityIndicator size="large" color="#2563eb" />
-        <Text style={styles.loadingText}>Fetching details...</Text>
+        <Text style={styles.loadingText}>Syncing with server...</Text>
       </View>
     );
   }
@@ -178,11 +239,12 @@ export default function ManageCustomer() {
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
           <ChevronLeft color="#0f172a" size={24} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>{id ? 'Edit Profile' : 'New Customer'}</Text>
+        <Text style={styles.headerTitle}>{id ? 'Edit Customer' : 'Add Customer'}</Text>
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-        {/* Personal & Income */}
+        
+        {/* SECTION 1: BASIC INFO */}
         <SectionHeader icon={<User size={18} color="#2563eb" />} title="Basic Info" />
         <View style={styles.formCard}>
           <CustomInput 
@@ -199,14 +261,12 @@ export default function ManageCustomer() {
           <View style={styles.row}>
             <View style={{ flex: 1, marginRight: 8 }}>
               <Text style={styles.label}>Income Source</Text>
-              <View style={styles.pickerContainer}>
-                <TextInput 
-                  style={styles.input}
-                  value={formData.incomeSource}
-                  placeholder="e.g. Salary"
-                  onChangeText={(val) => setFormData({...formData, incomeSource: val})}
-                />
-              </View>
+              <TextInput 
+                style={styles.input}
+                value={formData.incomeSource}
+                placeholder="e.g. Shop"
+                onChangeText={(val) => setFormData({...formData, incomeSource: val})}
+              />
             </View>
             <View style={{ flex: 1 }}>
               <CustomInput 
@@ -219,7 +279,7 @@ export default function ManageCustomer() {
           </View>
         </View>
 
-        {/* Locations */}
+        {/* SECTION 2: LOCATION & COORDINATES */}
         <SectionHeader icon={<MapPin size={18} color="#2563eb" />} title="Location Details" />
         <View style={styles.formCard}>
           <CustomInput 
@@ -235,13 +295,38 @@ export default function ManageCustomer() {
           <View style={styles.divider} />
           
           <View style={styles.collectionHeader}>
-            <Text style={styles.label}>Collection Point Type</Text>
+            <Text style={styles.label}>Collection Point & GPS</Text>
             <TouchableOpacity onPress={getCurrentLocation} style={styles.locBtn}>
               <MapPin size={14} color="#2563eb" />
-              <Text style={styles.locBtnText}>Get GPS</Text>
+              <Text style={styles.locBtnText}>Auto Fetch GPS</Text>
             </TouchableOpacity>
           </View>
-          
+
+          <View style={styles.row}>
+            <View style={{ flex: 1, marginRight: 8 }}>
+              <CustomInput 
+                label="Latitude" 
+                keyboardType="numeric"
+                value={formData.locations.collectionPoint.geo.lat}
+                onChangeText={(val) => setFormData({
+                  ...formData, 
+                  locations: { ...formData.locations, collectionPoint: { ...formData.locations.collectionPoint, geo: { ...formData.locations.collectionPoint.geo, lat: val } } }
+                })}
+              />
+            </View>
+            <View style={{ flex: 1 }}>
+              <CustomInput 
+                label="Longitude" 
+                keyboardType="numeric"
+                value={formData.locations.collectionPoint.geo.lng}
+                onChangeText={(val) => setFormData({
+                  ...formData, 
+                  locations: { ...formData.locations, collectionPoint: { ...formData.locations.collectionPoint, geo: { ...formData.locations.collectionPoint.geo, lng: val } } }
+                })}
+              />
+            </View>
+          </View>
+
           <View style={styles.chipRow}>
             {['Home', 'Shop', 'Other'].map(type => (
               <TouchableOpacity 
@@ -258,12 +343,13 @@ export default function ManageCustomer() {
           </View>
         </View>
 
-        {/* KYC */}
-        <SectionHeader icon={<ShieldCheck size={18} color="#2563eb" />} title="KYC Records" />
+        {/* SECTION 3: KYC */}
+        <SectionHeader icon={<ShieldCheck size={18} color="#2563eb" />} title="Identification (KYC)" />
         <View style={styles.formCard}>
           <CustomInput 
             label="Aadhaar Number" 
             keyboardType="numeric"
+            maxLength={12}
             value={formData.kyc.aadhaarNumber}
             onChangeText={(val) => setFormData({ ...formData, kyc: { ...formData.kyc, aadhaarNumber: val } })}
           />
@@ -280,7 +366,7 @@ export default function ManageCustomer() {
           />
         </View>
 
-        {/* Proofs */}
+        {/* SECTION 4: PROOFS */}
         <SectionHeader icon={<FileText size={18} color="#2563eb" />} title="Proofs Submitted" />
         <View style={styles.formCard}>
           <View style={styles.proofGrid}>
@@ -297,7 +383,7 @@ export default function ManageCustomer() {
           </View>
         </View>
 
-        {/* Family Members */}
+        {/* SECTION 5: FAMILY MEMBERS */}
         <SectionHeader icon={<Users size={18} color="#2563eb" />} title="Family / Nominees" />
         <View style={styles.formCard}>
           {formData.familyMembers.map((member, idx) => (
@@ -314,16 +400,23 @@ export default function ManageCustomer() {
           
           <View style={styles.addFamilyRow}>
             <TextInput 
-              style={[styles.input, { flex: 2, marginRight: 4 }]} 
+              style={[styles.input, { flex: 1.5, marginRight: 4 }]} 
               placeholder="Name" 
               value={newFamily.name}
               onChangeText={v => setNewFamily({...newFamily, name: v})}
             />
             <TextInput 
               style={[styles.input, { flex: 1, marginRight: 4 }]} 
-              placeholder="Rel." 
+              placeholder="Relation" 
               value={newFamily.relation}
               onChangeText={v => setNewFamily({...newFamily, relation: v})}
+            />
+            <TextInput 
+              style={[styles.input, { flex: 1.2, marginRight: 4 }]} 
+              placeholder="Mobile" 
+              keyboardType="phone-pad"
+              value={newFamily.mobile}
+              onChangeText={v => setNewFamily({...newFamily, mobile: v})}
             />
             <TouchableOpacity style={styles.addBtn} onPress={handleAddFamily}>
               <Plus color="#fff" size={20} />
@@ -331,36 +424,65 @@ export default function ManageCustomer() {
           </View>
         </View>
 
-        {/* Assignment */}
-        <SectionHeader icon={<Briefcase size={18} color="#2563eb" />} title="Assignments" />
+        {/* SECTION 6: ASSIGNMENTS */}
+        <SectionHeader icon={<Briefcase size={18} color="#2563eb" />} title="Admin Assignments" />
         <View style={styles.formCard}>
-          <Text style={styles.label}>Assign Collection Boy</Text>
-          <View style={styles.pickerContainer}>
+          <Text style={styles.label}>Link Collection Boy</Text>
+          <View style={styles.pickerWrapper}>
+            {collectionBoys.length === 0 ? (
+              <Text style={styles.errorHint}>No collection boys found in DB</Text>
+            ) : (
+              <View style={styles.chipRow}>
+                {collectionBoys.map(boy => (
+                  <TouchableOpacity 
+                    key={boy._id}
+                    style={[styles.miniChip, formData.collectionBoyId === boy._id && styles.chipActive]}
+                    onPress={() => setFormData({...formData, collectionBoyId: boy._id})}
+                  >
+                    <Text style={[styles.miniChipText, formData.collectionBoyId === boy._id && styles.chipTextActive]}>{boy.name}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+          </View>
+
+          <View style={styles.divider} />
+
+          <Text style={styles.label}>Referred By</Text>
+          <View style={styles.searchBox}>
+            <Search size={16} color="#94a3b8" />
             <TextInput 
-              style={styles.input}
-              placeholder="Select Staff..."
-              value={collectionBoys.find(b => b._id === formData.collectionBoyId)?.name || ''}
-              onTouchStart={() => {
-                // In a real app, open a picker modal
-                // For now, let's just cycle through for demo or alert
-                if (collectionBoys.length > 0) {
-                  const currentIndex = collectionBoys.findIndex(b => b._id === formData.collectionBoyId);
-                  const nextIndex = (currentIndex + 1) % collectionBoys.length;
-                  setFormData({...formData, collectionBoyId: collectionBoys[nextIndex]._id});
-                }
+              style={{ flex: 1, marginLeft: 8, fontSize: 14 }}
+              placeholder="Search existing customer..."
+              value={referrerQuery}
+              onChangeText={(val) => {
+                setReferrerQuery(val);
+                setShowReferrerList(true);
               }}
+              onFocus={() => setShowReferrerList(true)}
             />
           </View>
 
-          <Text style={[styles.label, { marginTop: 12 }]}>Referred By</Text>
-          <View style={styles.pickerContainer}>
-             <TextInput 
-              style={styles.input}
-              placeholder="Search Customer..."
-              value={allCustomers.find(c => c._id === formData.referredBy)?.fullName || ''}
-              onChangeText={() => {}} // Handle search logic
-            />
-          </View>
+          {showReferrerList && referrerQuery.length > 0 && (
+            <View style={styles.dropdown}>
+              {allCustomers
+                .filter(c => c.fullName.toLowerCase().includes(referrerQuery.toLowerCase()))
+                .slice(0, 5)
+                .map(c => (
+                  <TouchableOpacity 
+                    key={c._id} 
+                    style={styles.dropdownItem}
+                    onPress={() => {
+                      setFormData({...formData, referredBy: c._id});
+                      setReferrerQuery(c.fullName);
+                      setShowReferrerList(false);
+                    }}
+                  >
+                    <Text style={styles.dropdownText}>{c.fullName} ({c.mobile})</Text>
+                  </TouchableOpacity>
+                ))}
+            </View>
+          )}
         </View>
 
         <TouchableOpacity 
@@ -373,7 +495,7 @@ export default function ManageCustomer() {
           ) : (
             <>
               <Save color="#fff" size={20} />
-              <Text style={styles.submitText}>{id ? 'UPDATE CUSTOMER' : 'CREATE CUSTOMER'}</Text>
+              <Text style={styles.submitText}>{id ? 'SAVE CHANGES' : 'REGISTER CUSTOMER'}</Text>
             </>
           )}
         </TouchableOpacity>
@@ -431,10 +553,12 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row' },
   divider: { height: 1, backgroundColor: '#f1f5f9', marginVertical: 16 },
   collectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  locBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#eff6ff', padding: 6, borderRadius: 8 },
+  locBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#eff6ff', padding: 8, borderRadius: 8 },
   locBtnText: { fontSize: 12, fontWeight: 'bold', color: '#2563eb' },
-  chipRow: { flexDirection: 'row', gap: 8 },
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   chip: { flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 10, backgroundColor: '#f1f5f9', borderWidth: 1, borderColor: '#e2e8f0' },
+  miniChip: { paddingVertical: 8, paddingHorizontal: 16, borderRadius: 12, backgroundColor: '#f1f5f9', borderWidth: 1, borderColor: '#e2e8f0' },
+  miniChipText: { fontSize: 13, fontWeight: '600', color: '#64748b' },
   chipActive: { backgroundColor: '#dbeafe', borderColor: '#2563eb' },
   chipText: { fontSize: 12, fontWeight: 'bold', color: '#64748b' },
   chipTextActive: { color: '#2563eb' },
@@ -446,9 +570,13 @@ const styles = StyleSheet.create({
   familyItem: { flexDirection: 'row', alignItems: 'center', padding: 12, backgroundColor: '#f8fafc', borderRadius: 12, marginBottom: 8 },
   familyName: { fontSize: 14, fontWeight: 'bold', color: '#1e293b' },
   familyMobile: { fontSize: 12, color: '#64748b' },
-  addFamilyRow: { flexDirection: 'row', marginTop: 8 },
+  addFamilyRow: { flexDirection: 'row', marginTop: 8, gap: 4 },
   addBtn: { backgroundColor: '#0f172a', width: 45, height: 45, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
-  pickerContainer: { marginBottom: 4 },
+  pickerWrapper: { marginBottom: 4 },
+  searchBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#f1f5f9', borderRadius: 12, paddingHorizontal: 12, height: 50, borderWidth: 1, borderColor: '#e2e8f0' },
+  dropdown: { backgroundColor: '#fff', borderRadius: 12, marginTop: 4, elevation: 5, borderWhidht: 1, borderColor: '#e2e8f0' },
+  dropdownItem: { padding: 14, borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
+  dropdownText: { fontSize: 14, color: '#1e293b' },
   submitBtn: { 
     backgroundColor: '#2563eb', 
     padding: 18, 
@@ -462,5 +590,6 @@ const styles = StyleSheet.create({
   },
   submitText: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  loadingText: { marginTop: 12, color: '#64748b', fontWeight: '600' }
+  loadingText: { marginTop: 12, color: '#64748b', fontWeight: '600' },
+  errorHint: { fontSize: 12, color: '#ef4444', fontStyle: 'italic', marginLeft: 4 }
 });
