@@ -124,7 +124,10 @@ export default function LenderCashEntry() {
         lenderId: selectedLender._id,
         type,
         amount: totalAmount, // Total for history
-        payments: paymentSplits.map(s => ({ paymentMode: s.mode, amount: Number(s.amount) })),
+        // Backend expects objects with { mode, amount } in paymentSplit array
+        paymentSplit: paymentSplits
+          .filter(s => Number(s.amount) > 0)
+          .map(s => ({ mode: s.mode, amount: Number(s.amount) })),
         notes,
         date: new Date()
       };

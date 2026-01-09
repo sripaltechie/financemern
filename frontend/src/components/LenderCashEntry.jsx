@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { 
-    Wallet, ArrowRight, User, Plus, History, TrendingUp, TrendingDown, CreditCard 
+    Wallet, ArrowRight, User, Plus, History, TrendingUp, TrendingDown, CreditCard , X
 } from 'lucide-react';
 
 
